@@ -10,6 +10,16 @@
 #include <linux/if_ether.h>
 #include <arpa/inet.h>
 
+#define INTERFACE "enp14s0"
+#define ASCII_MAC_LEN 12
+#define ASCII_MAC_LEN_C 17
+#define HEX_MAC_LEN 6
+#define OPT_LEN 8
+#define IFNAME_LEN 255
+#define DEST_MAC "\x74\x56\x3c\x66\x80\x50"
+#define VAR_LEN 500
+#define PACKET_LEN 30000
+
 #define L2WRT_PROTOCOL 0x326c
 
 typedef enum l2uci_opt
