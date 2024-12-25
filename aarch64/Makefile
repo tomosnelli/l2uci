@@ -8,6 +8,7 @@ include $(INCLUDE_DIR)/package.mk
 
 # Define build directory
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
+LD_FLAGS += -luci
 
 define Package/l2uci
 	SECTION:=utils
@@ -26,7 +27,7 @@ define Build/Prepare
 endef
 
 define Build/Compile
-	$(TARGET_CC) $(TARGET_CFLAGS) -o $(PKG_BUILD_DIR)/l2uci $(PKG_BUILD_DIR)/src/main.c
+	$(TARGET_CC) $(LD_FLAGS) $(TARGET_CFLAGS) -o $(PKG_BUILD_DIR)/l2uci $(PKG_BUILD_DIR)/src/main.c
 endef
 
 define Package/l2uci/install

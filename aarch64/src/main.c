@@ -8,7 +8,7 @@ int l2uci_packet_handler(unsigned char* payload, size_t size)
     uint8_t opt     = payload[ SEQ_NUM_OFFSET + 1 ];
 
     struct uci_context *ctx = uci_alloc_context();
-    struct uci_ptr ptr = NULL;
+    struct uci_ptr ptr;
 
     if (uci_lookup_ptr(ctx, &ptr, payload + (SEQ_NUM_OFFSET + 6), true) != UCI_OK)
     {
@@ -85,7 +85,7 @@ int l2uci_listener()
                    eth->h_dest[3], eth->h_dest[4], eth->h_dest[5]);
             printf("Protocol: %04X\n", ntohs(eth->h_proto));
 
-            printf("Payload (%d bytes):\n", buflen - sizeof(struct ethhdr));
+            printf("Payload (%ld bytes):\n", buflen - sizeof(struct ethhdr));
             for (int i = sizeof(struct ethhdr); i < buflen; i++) {
                 printf("%02X ", buffer[i]);
                 if ((i + 1) % 16 == 0) printf("\n");

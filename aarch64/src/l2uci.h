@@ -20,6 +20,8 @@
 
 #define L2UCI_PROTOCOL 0x326c
 
+#define SEQ_NUM_OFFSET 0
+
 typedef enum l2uci_opt
 {
     DISCOVER = 0x00,
