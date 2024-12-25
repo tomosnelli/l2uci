@@ -51,39 +51,32 @@ opt_t ascii_opt_to_hex( const char* str )
 
 /*
 General GET/SET/SHOW packet
- SEQ  ID  OPT  MAC  IFLEN  IFNAME  VARLEN  VAR  (VAR\0VAL\0VAR\0VAL\0)
-[   ][  ][   ][   ][     ][      ][      ][   ]
+ SEQ  OPT  VARLEN  VAR 
+[   ][   ][      ][   ]
 */
-size_t construct_packet(uint8_t* packet, uint8_t opt_code, uint8_t* mac, const char* ifname, const char* var ) {
+size_t construct_packet(uint8_t* packet, uint8_t opt_code, const char* var) {
     uint8_t* ptr = packet;
     uint32_t net_byte_var_len = htonl(strlen(var) + 1);
     size_t runtime_packet_len = 0;
-    size_t iflen = strlen(ifname);
 
     // Calculate the runtime packet length based on the option code
     switch (opt_code) {
         case DISCOVER:
-            runtime_packet_len = sizeof(uint8_t) * 2; // SEQ + ID
+            runtime_packet_len = sizeof(uint8_t) * 2; // SEQ + opt
             break;
         case SHOW:
         case GET:
-            runtime_packet_len = sizeof(uint8_t) * 3 +     // SEQ + ID + MAC (6 bytes)
-                                 sizeof(uint8_t) * 6 +     // MAC address length
-                                 iflen +                    // Interface name length
+            runtime_packet_len = sizeof(uint8_t) * 2 +     // SEQ + opt
                                  sizeof(uint32_t) +         // Variable length (4 bytes)
                                  strlen(var) + 1;           // Variable string + null terminator
             break;
         case SET:
-            runtime_packet_len = sizeof(uint8_t) * 3 +     // SEQ + ID + MAC (6 bytes)
-                                 sizeof(uint8_t) * 6 +     // MAC address length
-                                 iflen +                    // Interface name length
+            runtime_packet_len = sizeof(uint8_t) * 2 +     // SEQ + opt
                                  sizeof(uint32_t) +         // Variable length (4 bytes)
                                  strlen(var) + 1;          // Variable string + null terminator
-                                 // strlen(val) + 1;           // Value string + null terminator
             break;
         case COMMIT:
-            runtime_packet_len = sizeof(uint8_t) * 2 +     // SEQ + ID
-                                 iflen;                    // Interface name length
+            runtime_packet_len = sizeof(uint8_t) * 2;     // SEQ + ID
             break;
         default:
             printf("Invalid option code\n");
@@ -100,13 +93,6 @@ size_t construct_packet(uint8_t* packet, uint8_t opt_code, uint8_t* mac, const c
 
     // Common packet construction for SHOW, GET, and SET
     if (opt_code == SHOW || opt_code == GET || opt_code == SET) {
-        memcpy(ptr, mac, HEX_MAC_LEN);   // Copy MAC address
-        ptr += HEX_MAC_LEN;
-
-        *(ptr++) = iflen;                 // Copy interface name length
-        memcpy(ptr, ifname, iflen);      // Copy interface name
-        ptr += iflen;
-
         *(ptr++) = (net_byte_var_len >> 0) & 0xff;   // Copy variable length in network byte order
         *(ptr++) = (net_byte_var_len >> 8) & 0xff;
         *(ptr++) = (net_byte_var_len >> 16) & 0xff;
@@ -122,7 +108,7 @@ size_t construct_packet(uint8_t* packet, uint8_t opt_code, uint8_t* mac, const c
 }
 
 
-int send_packet( uint8_t* packet, size_t packet_len )
+int send_packet( uint8_t* hex_mac, char* ifname, uint8_t* packet, size_t packet_len )
 {
     int    raw_socket;
     struct ifreq ifr;
@@ -131,7 +117,7 @@ int send_packet( uint8_t* packet, size_t packet_len )
     struct ethhdr *eh = (struct ethhdr *)buffer;
     
     // Create raw socket
-    raw_socket = socket(AF_PACKET, SOCK_RAW, htons(L2WRT_PROTOCOL));
+    raw_socket = socket(AF_PACKET, SOCK_RAW, htons(L2UCI_PROTOCOL));
     if (raw_socket == -1) {
         perror("Socket creation failed");
         return -1;
@@ -139,7 +125,7 @@ int send_packet( uint8_t* packet, size_t packet_len )
 
     // Get interface index
     memset(&ifr, 0, sizeof(struct ifreq));
-    strncpy(ifr.ifr_name, INTERFACE, IFNAMSIZ-1);
+    strncpy(ifr.ifr_name, ifname, IFNAMSIZ-1);
     if (ioctl(raw_socket, SIOCGIFINDEX, &ifr) < 0) {
         perror("SIOCGIFINDEX");
         close(raw_socket);
@@ -149,26 +135,24 @@ int send_packet( uint8_t* packet, size_t packet_len )
     // Prepare sockaddr_ll
     memset(&socket_address, 0, sizeof(struct sockaddr_ll));
     socket_address.sll_family = AF_PACKET;
-    socket_address.sll_protocol = htons(L2WRT_PROTOCOL);
+    socket_address.sll_protocol = htons(L2UCI_PROTOCOL);
     socket_address.sll_ifindex = ifr.ifr_ifindex;
     socket_address.sll_halen = ETH_ALEN;
-    memcpy(socket_address.sll_addr, DEST_MAC, ETH_ALEN);
+    memcpy(socket_address.sll_addr, hex_mac, ETH_ALEN);
 
     // Prepare Ethernet header
-    memcpy(eh->h_dest, DEST_MAC, ETH_ALEN);
+    memcpy(eh->h_dest, hex_mac, ETH_ALEN);
     if (ioctl(raw_socket, SIOCGIFHWADDR, &ifr) < 0) {
         perror("SIOCGIFHWADDR");
         close(raw_socket);
         return -1;
     }
     memcpy(eh->h_source, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
-    eh->h_proto = htons(L2WRT_PROTOCOL);  // You can change this for different protocols
+    eh->h_proto = htons(L2UCI_PROTOCOL);  // You can change this for different protocols
 
     // Prepare packet data (after Ethernet header)
     char *data = buffer + sizeof(struct ethhdr);
-    // strcpy(data, "Hello, Layer 2!");
     memcpy( data, packet, packet_len );
-    // int data_len = strlen(data);
     int data_len = packet_len;
 
     // Send packet
@@ -245,14 +229,14 @@ int main( int argc, char *argv[] )
         }
     }
 
-    size_t packet_size = construct_packet( packet, l2opt, hex_mac, ifname, variable );
+    size_t packet_size = construct_packet( packet, l2opt, variable );
 
     if(packet_size == 0){
         printf("Error: issue while constructing packet\n");
         return 1;
     }
 
-    int status = send_packet( packet, packet_size );
+    int status = send_packet( hex_mac, ifname, packet, packet_size );
 
     if(status < 0){
         printf("Error: issue sending packet\n");
